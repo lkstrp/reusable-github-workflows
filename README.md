@@ -6,7 +6,7 @@ The workflows use composite actions in `.github/actions/`.
 
 | Workflow | Purpose |
 | --- | --- |
-| [`test.yml`](#testyml) | Test matrix in a pixi env (library mode or project mode). |
+| [`test.yml`](#testyml) | Test matrix in a uv venv or pixi env (library mode) or the repo's pixi env (project mode). |
 | [`release.yml`](#releaseyml) | Tag-to-release chain: prepare, test, build, TestPyPI, GitHub release, PyPI. |
 | [`benchmark.yml`](#benchmarkyml) | CodSpeed benchmarks, or a pytest-benchmark comparison of base and head. |
 | [`pypsa-eur.yml`](#pypsa-euryml) | Run PyPSA-Eur with the caller package at the current commit. |
@@ -43,14 +43,20 @@ updates:
 
 ## test.yml
 
-Runs the tests in a pixi env on a matrix of OS and Python versions (library mode) or pixi environments (project mode).
-Library mode builds a wheel with `hynek/build-and-inspect-python-package` and installs it with uv into a throwaway pixi env.
-Project mode starts when you set `pixi-task`. It uses the pixi manifest of the repo.
+Runs the tests on a matrix of OS and Python versions (library mode) or pixi environments (project mode).
+Library mode builds a wheel with `hynek/build-and-inspect-python-package` and installs it with uv.
+The environment depends on the inputs:
+
+- Project mode, when `pixi-task` is set: the pixi manifest of the repo.
+- Library mode with `pixi-add`: a throwaway pixi env with Python, uv and the `pixi-add` conda packages. uv installs the wheel into it.
+- Library mode without `pixi-add`: a plain uv venv from `astral-sh/setup-uv`, with no pixi. The venv is on `PATH` and `RUN` is empty.
+
+The uv backend runs uv at its latest release unless the repo pins `required-version` in `uv.toml` or `[tool.uv]`, so a CI failure that starts with a new uv release likely comes from uv.
 
 | Input | Type | Default | Description |
 | --- | --- | --- | --- |
 | `extras` | string | `dev` | Comma-separated extras to install with the wheel. |
-| `pixi-add` | string | | Space-separated conda-forge specs to add to the env, e.g. `glpk coin-or-cbc` or `openjdk>=22`. |
+| `pixi-add` | string | | Space-separated conda-forge specs to add to the env, e.g. `glpk coin-or-cbc` or `openjdk>=22`. Empty selects the uv venv. |
 | `uv-locked` | boolean | `false` | Install dependencies from `uv.lock` before the wheel. |
 | `cooldown` | string | `7d` | Ignore conda and PyPI releases newer than this age (library mode). Empty disables. `uv-locked` installs ignore it. |
 | `matrix` | string | `auto` | `single`, `lean`, `full` or `auto` (`lean` on push and PR, `full` on schedule, dispatch and tags). |
@@ -96,7 +102,7 @@ Runs the release chain for a tag push. The jobs are:
 1. `prepare` (only if `prepare-command` is set and `dry-run` is false). If the tag does not point at the prepare commit, the job runs the command, commits the changes with the PyPSA bot and moves the tag to the new commit. The new tag starts a new run. The first run then stops.
 2. `test`: calls `test.yml` with the values in `test-inputs`.
 3. `build`: builds the sdist and wheel (artifact `Packages-release`). The job fails if the wheel version is not the tag without the leading `v`. Use PEP 440 tags, for example `v1.2.0rc1`.
-4. `testpypi` and `smoke` (only if `testpypi: true`): upload to TestPyPI, then install the package from TestPyPI in a fresh env and run `smoke-command`. The install retries for up to 5 minutes.
+4. `testpypi` and `smoke` (only if `testpypi: true`): upload to TestPyPI, then install the package from TestPyPI in a fresh env and run `smoke-command`. The install retries for up to 5 minutes. The smoke env is a uv venv, since it sets no `pixi-add`.
 5. `github-release`: creates the GitHub release. A tag with an `a`, `b` or `rc` suffix makes a pre-release.
 6. `publish` (only if `pypi: true`): uploads to PyPI with trusted publishing.
 
@@ -146,7 +152,7 @@ GitHub checks the permissions of all called jobs before the run starts.
 
 ## benchmark.yml
 
-Runs benchmarks in a library-mode pixi env. Set `mode` to one of:
+Runs benchmarks in a library-mode env: a uv venv when `pixi-add` is empty, else a pixi env, as in `test.yml`. Set `mode` to one of:
 
 - `codspeed`: runs `pytest <benchmark-path> --codspeed` with `CodSpeedHQ/action`, once per mode in `codspeed-modes`.
   A walltime run on the `codspeed-macro` runner starts on non-PR events, and on PRs with the label `walltime-label`.
@@ -164,7 +170,7 @@ Runs benchmarks in a library-mode pixi env. Set `mode` to one of:
 | `benchmark-path` | string | `benchmarks` | Benchmark directory, relative to working-directory. |
 | `extras` | string | `dev,benchmarks` | Comma-separated extras to install with the wheel. |
 | `python-version` | string | `3.13` | Python version of the benchmark env. |
-| `pixi-add` | string |  | Space-separated conda-forge specs to add to the env. |
+| `pixi-add` | string |  | Space-separated conda-forge specs to add to the env. Empty selects the uv venv. |
 | `cooldown` | string | `7d` | Ignore conda and PyPI releases newer than this age. Empty disables. |
 | `pytest-args` | string |  | Extra pytest arguments. |
 | `codspeed-modes` | string | `["simulation","memory"]` | JSON list of CodSpeed modes for ubuntu-latest (codspeed mode only). |

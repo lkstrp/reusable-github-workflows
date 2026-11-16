@@ -66,6 +66,27 @@ jobs:
       pixi-add: glpk
       coverage: true
 
+  test-library-uv:
+    uses: ./.github/workflows/test.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      working-directory: tests/fixture-package
+      artifact-suffix: -uv
+      matrix: full
+      python-versions: '["3.12"]'
+
+  test-library-uv-locked:
+    uses: ./.github/workflows/test.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      working-directory: tests/fixture-package
+      uv-locked: true
+      artifact-suffix: -uv-locked
+
   test-project:
     uses: ./.github/workflows/test.yml
     permissions:
